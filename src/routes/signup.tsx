@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { AuthShell, Field } from "./login";
+import { AuthShell, Field } from "@/components/adaudit/AuthShell";
 
 export const Route = createFileRoute("/signup")({
   component: SignupPage,
