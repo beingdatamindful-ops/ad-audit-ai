@@ -8,19 +8,15 @@ import {
 } from "lucide-react";
 import { Logo } from "./Logo";
 import {
-  FINDINGS,
-  TOTAL_SAVINGS,
-  HIGH_COUNT,
-  AVG_CONFIDENCE,
-  SUMMARY,
-  TOP_PRIORITIES,
   type Severity,
   type Category,
   type Finding,
+  type ReportData,
 } from "./data";
 
 interface Props {
   accountName: string;
+  data: ReportData;
   onRestart: () => void;
 }
 
