@@ -76,7 +76,7 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
           <Logo />
           <button
             onClick={onRestart}
-            className="hidden items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground sm:inline-flex"
+            className="no-print hidden items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground sm:inline-flex"
           >
             <RotateCcw className="h-3.5 w-3.5" /> New audit
           </button>
