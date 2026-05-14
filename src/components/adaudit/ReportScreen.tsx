@@ -70,8 +70,9 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
   });
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border">
+    <div className="relative min-h-screen bg-background text-foreground">
+      <div className="bg-grid-soft pointer-events-none absolute inset-x-0 top-0 h-[400px]" />
+      <header className="relative border-b border-border/60 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
           <Logo />
           <button
@@ -83,7 +84,7 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl space-y-8 px-6 py-10">
+      <main className="relative mx-auto max-w-6xl space-y-8 px-6 py-10">
         {/* Top banner */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
