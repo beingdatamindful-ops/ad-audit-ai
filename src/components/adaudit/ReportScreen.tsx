@@ -329,13 +329,15 @@ function FindingRow({
           />
         </div>
       </button>
-      {open && (
-        <div className="space-y-4 border-t border-border bg-background/40 px-5 py-5 text-sm">
-          <Detail label="Description" value={finding.description} />
-          <Detail label="Evidence" value={finding.evidence} />
-          <Detail label="Recommended Action" value={finding.action} accent />
-        </div>
-      )}
+      <div
+        className={`finding-details space-y-4 border-t border-border bg-background/40 px-5 py-5 text-sm ${
+          open ? "block" : "hidden"
+        }`}
+      >
+        <Detail label="Description" value={finding.description} />
+        <Detail label="Evidence" value={finding.evidence} />
+        <Detail label="Recommended Action" value={finding.action} accent />
+      </div>
     </div>
   );
 }
