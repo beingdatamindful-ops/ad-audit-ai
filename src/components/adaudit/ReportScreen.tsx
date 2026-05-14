@@ -105,29 +105,48 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
         </div>
 
         {/* Hero card */}
-        <section className="relative overflow-hidden rounded-3xl border border-brand/40 bg-gradient-to-br from-brand via-brand to-brand-2 p-8 text-background shadow-2xl shadow-brand/30 sm:p-10">
-          <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-background/15 blur-3xl" />
-          <div className="absolute -bottom-32 -left-20 h-72 w-72 rounded-full bg-background/10 blur-3xl" />
-          <div className="relative">
-            <div className="flex items-center gap-2 text-sm font-medium opacity-90">
-              <Sparkles className="h-4 w-4" />
-              Estimated Monthly Savings Identified
+        <section className="relative overflow-hidden rounded-2xl border border-border bg-surface shadow-xl shadow-black/20">
+          {/* subtle corporate visual layers */}
+          <div
+            className="pointer-events-none absolute inset-0 opacity-[0.05]"
+            style={{
+              backgroundImage:
+                "linear-gradient(to right, currentColor 1px, transparent 1px), linear-gradient(to bottom, currentColor 1px, transparent 1px)",
+              backgroundSize: "32px 32px",
+            }}
+          />
+          <div className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-brand/20 blur-3xl" />
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand/60 to-transparent" />
+
+          <div className="relative grid gap-6 p-6 sm:grid-cols-[1.2fr_1fr] sm:items-center sm:gap-8 sm:p-7">
+            <div>
+              <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                <Sparkles className="h-3.5 w-3.5 text-brand" />
+                Estimated Monthly Savings
+              </div>
+              <div className="mt-2 text-4xl font-bold tracking-tight text-gradient-brand sm:text-5xl">
+                {fmt(totalSavings)}
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Identified across {findings.length} findings • Recurring monthly impact
+              </p>
             </div>
-            <div className="mt-3 text-6xl font-bold tracking-tight sm:text-7xl">
-              {fmt(totalSavings)}
-            </div>
-            <div className="mt-8 grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
               {[
-                { label: "Total Findings", value: findings.length },
-                { label: "High Severity", value: highCount },
-                { label: "Avg Confidence", value: `${avgConfidence}%` },
+                { label: "Findings", value: findings.length },
+                { label: "High Sev", value: highCount },
+                { label: "Confidence", value: `${avgConfidence}%` },
               ].map((s) => (
                 <div
                   key={s.label}
-                  className="rounded-xl border border-background/20 bg-background/15 p-4 backdrop-blur"
+                  className="rounded-lg border border-border bg-background/60 p-3 text-center backdrop-blur"
                 >
-                  <div className="text-2xl font-semibold">{s.value}</div>
-                  <div className="mt-0.5 text-xs opacity-90">{s.label}</div>
+                  <div className="text-lg font-semibold text-foreground sm:text-xl">
+                    {s.value}
+                  </div>
+                  <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                    {s.label}
+                  </div>
                 </div>
               ))}
             </div>
