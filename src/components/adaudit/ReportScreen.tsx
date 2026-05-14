@@ -40,19 +40,27 @@ const sevStyles: Record<Severity, string> = {
 const fmt = (n: number) =>
   "$" + n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 
-export function ReportScreen({ accountName, onRestart }: Props) {
+export function ReportScreen({ accountName, data, onRestart }: Props) {
+  const {
+    findings,
+    totalSavings,
+    highCount,
+    avgConfidence,
+    summary,
+    topPriorities,
+  } = data;
   const [sev, setSev] = useState<(typeof SEVERITIES)[number]>("All");
   const [cat, setCat] = useState<(typeof CATEGORIES)[number]>("All");
   const [openId, setOpenId] = useState<string | null>(null);
 
   const filtered = useMemo(
     () =>
-      FINDINGS.filter(
+      findings.filter(
         (f) =>
           (sev === "All" || f.severity === sev) &&
           (cat === "All" || f.category === cat),
       ),
-    [sev, cat],
+    [findings, sev, cat],
   );
 
   const date = new Date().toLocaleDateString("en-US", {
