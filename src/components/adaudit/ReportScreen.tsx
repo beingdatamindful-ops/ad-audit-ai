@@ -138,7 +138,7 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
             Executive Summary
           </h2>
           <p className="text-base leading-relaxed text-foreground/90">
-            {SUMMARY}
+            {summary}
           </p>
         </section>
 
