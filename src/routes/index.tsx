@@ -69,7 +69,7 @@ function Landing() {
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-pretty text-base text-muted-foreground sm:text-lg">
           AI-powered analysis that finds wasted spend, structural issues, and missed
-          opportunities — the audit agencies charge $3,000 for, done instantly.
+          opportunities — done in 90 seconds, not 4 hours.
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Link

@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchProfileApprovalStatus } from "@/lib/auth";
 import { AuthShell, Field } from "@/components/adaudit/AuthShell";
 
 export const Route = createFileRoute("/login")({
@@ -27,43 +28,27 @@ function LoginPage() {
       setError("Incorrect email or password");
       return;
     }
-    const { data: prof } = await supabase
-      .from("profiles")
-      .select("status")
-      .eq("id", data.user.id)
-      .maybeSingle();
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    const status = await fetchProfileApprovalStatus(data.user.id);
 
     setBusy(false);
-    const status = prof?.status ?? "pending";
     if (status === "approved") navigate({ to: "/app" });
     else if (status === "pending") {
-      setError(
-        "Your account is pending approval. We'll email you once you're approved.",
-      );
+      setError("Your account is pending approval. We'll email you once you're approved.");
     } else {
-      setError(
-        "Your request was not approved. Email adauditai@gmail.com for help.",
-      );
+      setError("Your request was not approved. Email adauditai@gmail.com for help.");
     }
   }
 
   return (
     <AuthShell title="Welcome back" subtitle="Login to your AdAudit AI account">
       <form onSubmit={onSubmit} className="space-y-4">
-        <Field
-          label="Email"
-          type="email"
-          value={email}
-          onChange={setEmail}
-          required
-        />
-        <Field
-          label="Password"
-          type="password"
-          value={password}
-          onChange={setPassword}
-          required
-        />
+        <Field label="Email" type="email" value={email} onChange={setEmail} required />
+        <Field label="Password" type="password" value={password} onChange={setPassword} required />
         {error && (
           <p className="rounded-md border border-severity-high/40 bg-severity-high/10 px-3 py-2 text-sm text-severity-high">
             {error}
@@ -87,4 +72,3 @@ function LoginPage() {
     </AuthShell>
   );
 }
-
