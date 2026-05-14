@@ -180,7 +180,7 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
             {topPriorities.map((p, i) => (
               <div
                 key={p.id}
-                className="group relative rounded-2xl border border-border bg-surface p-5 transition hover:border-brand/40"
+                className="group relative rounded-2xl border border-border bg-surface p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-lg hover:shadow-brand/10"
               >
                 <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand to-brand-2 text-sm font-bold text-background">
                   {i + 1}
