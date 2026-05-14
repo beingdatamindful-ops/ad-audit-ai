@@ -222,8 +222,11 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
         </section>
 
         {/* Bottom actions */}
-        <div className="flex flex-wrap items-center justify-center gap-3 pt-4">
-          <button className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-brand to-brand-2 px-5 py-3 text-sm font-semibold text-background shadow-lg shadow-brand/20 transition hover:brightness-110">
+        <div className="no-print flex flex-wrap items-center justify-center gap-3 pt-4">
+          <button
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-brand to-brand-2 px-5 py-3 text-sm font-semibold text-background shadow-lg shadow-brand/20 transition hover:brightness-110"
+          >
             <Download className="h-4 w-4" />
             Download PDF Report
           </button>
