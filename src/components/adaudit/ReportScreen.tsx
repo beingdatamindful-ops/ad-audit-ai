@@ -105,33 +105,41 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
         </div>
 
         {/* Hero card */}
-        <section className="relative overflow-hidden rounded-2xl border border-border bg-surface shadow-xl shadow-black/20">
-          {/* subtle corporate visual layers */}
+        <section className="group/hero relative overflow-hidden rounded-2xl border border-border bg-surface shadow-xl shadow-black/30 transition-all duration-500 hover:border-brand/40 hover:shadow-brand/10">
+          {/* corporate visual depth */}
           <div
-            className="pointer-events-none absolute inset-0 opacity-[0.05]"
+            className="pointer-events-none absolute inset-0 opacity-[0.06]"
             style={{
               backgroundImage:
                 "linear-gradient(to right, currentColor 1px, transparent 1px), linear-gradient(to bottom, currentColor 1px, transparent 1px)",
-              backgroundSize: "32px 32px",
+              backgroundSize: "28px 28px",
+              maskImage:
+                "radial-gradient(ellipse at top right, black 30%, transparent 75%)",
             }}
           />
-          <div className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-brand/20 blur-3xl" />
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand/60 to-transparent" />
+          <div className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-brand/25 blur-3xl transition-opacity duration-500 group-hover/hero:opacity-80" />
+          <div className="pointer-events-none absolute -bottom-24 -left-16 h-48 w-48 rounded-full bg-brand-2/15 blur-3xl" />
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand/70 to-transparent" />
+          <div className="pointer-events-none absolute inset-y-0 left-0 w-px bg-gradient-to-b from-transparent via-brand/30 to-transparent" />
 
-          <div className="relative grid gap-6 p-6 sm:grid-cols-[1.2fr_1fr] sm:items-center sm:gap-8 sm:p-7">
+          <div className="relative grid gap-8 p-7 sm:p-9 md:grid-cols-[1.3fr_1fr] md:items-center md:gap-10">
             <div>
-              <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                <Sparkles className="h-3.5 w-3.5 text-brand" />
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-brand/25 bg-brand/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-brand">
+                <Sparkles className="h-3 w-3" />
                 Estimated Monthly Savings
               </div>
-              <div className="mt-2 text-4xl font-bold tracking-tight text-gradient-brand sm:text-5xl">
+              <div className="mt-4 text-5xl font-bold tracking-tight text-gradient-brand sm:text-6xl md:text-[3.75rem] md:leading-none">
                 {fmt(totalSavings)}
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Identified across {findings.length} findings • Recurring monthly impact
+              <p className="mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground">
+                Identified across{" "}
+                <span className="font-medium text-foreground/90">
+                  {findings.length} findings
+                </span>{" "}
+                · Recurring monthly impact
               </p>
             </div>
-            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
               {[
                 { label: "Findings", value: findings.length },
                 { label: "High Sev", value: highCount },
@@ -139,12 +147,12 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
               ].map((s) => (
                 <div
                   key={s.label}
-                  className="rounded-lg border border-border bg-background/60 p-3 text-center backdrop-blur"
+                  className="group/stat rounded-xl border border-border bg-background/70 p-3.5 text-center backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:border-brand/40 hover:bg-background/90 sm:p-4"
                 >
-                  <div className="text-lg font-semibold text-foreground sm:text-xl">
+                  <div className="text-xl font-semibold tracking-tight text-foreground transition-colors group-hover/stat:text-brand sm:text-2xl">
                     {s.value}
                   </div>
-                  <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <div className="mt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                     {s.label}
                   </div>
                 </div>
@@ -172,7 +180,7 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
             {topPriorities.map((p, i) => (
               <div
                 key={p.id}
-                className="group relative rounded-2xl border border-border bg-surface p-5 transition hover:border-brand/40"
+                className="group relative rounded-2xl border border-border bg-surface p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-lg hover:shadow-brand/10"
               >
                 <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-brand to-brand-2 text-sm font-bold text-background">
                   {i + 1}
