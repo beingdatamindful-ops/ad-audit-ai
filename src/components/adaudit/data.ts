@@ -156,6 +156,62 @@ export const SUMMARY =
 
 export const TOP_PRIORITIES = FINDINGS.slice(0, 3);
 
+export interface ReportData {
+  findings: Finding[];
+  totalSavings: number;
+  highCount: number;
+  avgConfidence: number;
+  summary: string;
+  topPriorities: Finding[];
+}
+
+export const MOCK_REPORT: ReportData = {
+  findings: FINDINGS,
+  totalSavings: TOTAL_SAVINGS,
+  highCount: HIGH_COUNT,
+  avgConfidence: AVG_CONFIDENCE,
+  summary: SUMMARY,
+  topPriorities: TOP_PRIORITIES,
+};
+
+// Tolerant normalizer — backend response shape may vary, fall back to mock.
+export function normalizeReport(raw: unknown): ReportData {
+  if (!raw || typeof raw !== "object") return MOCK_REPORT;
+  const r = raw as Record<string, unknown>;
+  const findings = (Array.isArray(r.findings) ? r.findings : null) as
+    | Finding[]
+    | null;
+  if (!findings || findings.length === 0) return MOCK_REPORT;
+  const totalSavings =
+    typeof r.total_savings === "number"
+      ? r.total_savings
+      : typeof r.totalSavings === "number"
+        ? r.totalSavings
+        : findings.reduce((s, f) => s + (f.savings || 0), 0);
+  const highCount = findings.filter((f) => f.severity === "High").length;
+  const avgConfidence = Math.round(
+    findings.reduce((s, f) => s + (f.confidence || 0), 0) / findings.length,
+  );
+  const topPriorities = Array.isArray(r.top_priorities)
+    ? (r.top_priorities as Finding[])
+    : [...findings]
+        .sort((a, b) => (b.savings || 0) - (a.savings || 0))
+        .slice(0, 3);
+  return {
+    findings,
+    totalSavings,
+    highCount,
+    avgConfidence,
+    summary:
+      typeof r.summary === "string"
+        ? r.summary
+        : typeof r.executive_summary === "string"
+          ? r.executive_summary
+          : SUMMARY,
+    topPriorities,
+  };
+}
+
 export const AGENTS = [
   "Analyzing wasted spend...",
   "Reviewing account structure...",
