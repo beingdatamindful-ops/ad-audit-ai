@@ -182,7 +182,7 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
             </h2>
           </div>
 
-          <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <div className="no-print mb-4 grid gap-3 sm:grid-cols-2">
             <FilterGroup
               label="Severity"
               options={SEVERITIES}
