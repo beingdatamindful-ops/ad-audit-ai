@@ -3,20 +3,26 @@ import { Upload, FileText, ArrowRight } from "lucide-react";
 import { Logo } from "./Logo";
 
 interface Props {
-  onRun: (accountName: string) => void;
+  onRun: (accountName: string, csvData: string) => void;
 }
 
 export function UploadScreen({ onRun }: Props) {
   const [accountName, setAccountName] = useState("");
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = (f: File | undefined) => {
-    if (f) setFileName(f.name);
+    if (f) setFile(f);
   };
 
-  const canRun = accountName.trim().length > 0 && fileName;
+  const fileName = file?.name ?? null;
+  const canRun = accountName.trim().length > 0 && !!file;
+
+  const handleRun = async (name: string, f: File | null) => {
+    const csvData = f ? await f.text() : "";
+    onRun(name, csvData);
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
