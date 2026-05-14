@@ -112,7 +112,7 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
               Estimated Monthly Savings Identified
             </div>
             <div className="mt-3 text-6xl font-bold tracking-tight sm:text-7xl">
-              {fmt(TOTAL_SAVINGS)}
+              {fmt(totalSavings)}
             </div>
             <div className="mt-8 grid grid-cols-3 gap-3">
               {[
