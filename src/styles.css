@@ -158,7 +158,30 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    background-image:
+      radial-gradient(60% 50% at 15% 0%, oklch(0.82 0.17 65 / 0.12), transparent 70%),
+      radial-gradient(50% 50% at 95% 10%, oklch(0.65 0.18 305 / 0.10), transparent 70%);
+    background-attachment: fixed;
   }
+}
+
+.bg-grid-soft {
+  background-image:
+    linear-gradient(oklch(1 0 0 / 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(1 0 0 / 0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 80%);
+}
+
+.text-gradient-brand {
+  background: linear-gradient(135deg, oklch(0.92 0.13 75), oklch(0.78 0.21 45));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.glow-brand {
+  box-shadow: 0 20px 60px -15px oklch(0.82 0.17 65 / 0.45);
 }
 
 /*
