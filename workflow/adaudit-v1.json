@@ -1,0 +1,967 @@
+{
+  "name": "adaudit-v1",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "adaudit",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1056,
+        -272
+      ],
+      "id": "12a23095-b5e8-4fb6-ab52-70d24a1a6028",
+      "name": "Webhook",
+      "webhookId": "ae23be89-f984-4438-a0d8-aa83f5b8a406"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\n// Handle both flattened and body-nested payloads\nconst payload = input.body || input;\n\nconst csvString = payload.csv_data;\nconst accountName = payload.account_name || 'Unknown Account';\n\nif (!csvString) {\n  throw new Error('No csv_data found in request. Got keys: ' + Object.keys(payload).join(', '));\n}\n\n// Parse CSV into array of objects\nconst lines = csvString.trim().split('\\n');\nconst headers = lines[0].split(',').map(h => h.trim());\n\nconst rows = lines.slice(1).map(line => {\n  const values = line.split(',').map(v => v.trim());\n  const row = {};\n  headers.forEach((header, i) => {\n    // Convert numeric fields to numbers\n    const numericFields = ['impressions', 'clicks', 'cost', 'conversions', 'conv_value', 'quality_score'];\n    row[header] = numericFields.includes(header) ? parseFloat(values[i]) || 0 : values[i];\n  });\n  return row;\n});\n\n// Return as a single item with the parsed data\nreturn [{\n  json: {\n    account_name: accountName,\n    row_count: rows.length,\n    rows: rows\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -848,
+        -272
+      ],
+      "id": "7b1dad5a-46b1-49f1-a47e-03f436003c9d",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst rows = data.rows;\n\n// Defensive check\nif (!rows || rows.length === 0) {\n  throw new Error('No rows received from CSV parser. Check upstream node.');\n}\n\n// ───────────────────────────────────────────────\n// Helper functions\n// ───────────────────────────────────────────────\n\n// Sum a numeric field across an array of rows\nconst sum = (arr, field) => arr.reduce((acc, r) => acc + (r[field] || 0), 0);\n\n// Average a numeric field, ignoring zeros\nconst avg = (arr, field) => {\n  const valid = arr.filter(r => r[field] > 0);\n  return valid.length ? sum(valid, field) / valid.length : 0;\n};\n\n// Group rows by a field value\nconst groupBy = (arr, field) => {\n  return arr.reduce((acc, row) => {\n    const key = row[field] || 'unknown';\n    if (!acc[key]) acc[key] = [];\n    acc[key].push(row);\n    return acc;\n  }, {});\n};\n\n// Round to 2 decimal places\nconst round2 = (n) => Math.round(n * 100) / 100;\n\n// Compute aggregated metrics for grouped rows\nconst computeGroupMetrics = (groupedRows) => {\n  return Object.entries(groupedRows).map(([key, items]) => {\n    const cost = sum(items, 'cost');\n    const conversions = sum(items, 'conversions');\n    const clicks = sum(items, 'clicks');\n    const impressions = sum(items, 'impressions');\n    const conv_value = sum(items, 'conv_value');\n    return {\n      name: key,\n      cost: round2(cost),\n      impressions,\n      clicks,\n      conversions,\n      conv_value: round2(conv_value),\n      cpa: conversions > 0 ? round2(cost / conversions) : null,\n      roas: cost > 0 ? round2(conv_value / cost) : 0,\n      ctr: impressions > 0 ? round2((clicks / impressions) * 100) : 0,\n      conv_rate: clicks > 0 ? round2((conversions / clicks) * 100) : 0,\n      avg_qs: parseFloat(avg(items, 'quality_score').toFixed(1))\n    };\n  });\n};\n\n// ───────────────────────────────────────────────\n// Build the metrics object Claude will reason about\n// ───────────────────────────────────────────────\n\nconst totalSpend = sum(rows, 'cost');\nconst totalConversions = sum(rows, 'conversions');\nconst totalClicks = sum(rows, 'clicks');\nconst totalConvValue = sum(rows, 'conv_value');\n\nconst metrics = {\n  account_name: data.account_name,\n  row_count: rows.length,\n\n  period_summary: {\n    total_spend: round2(totalSpend),\n    total_clicks: totalClicks,\n    total_conversions: totalConversions,\n    total_conv_value: round2(totalConvValue),\n    overall_cpa: totalConversions > 0 ? round2(totalSpend / totalConversions) : null,\n    overall_roas: totalSpend > 0 ? round2(totalConvValue / totalSpend) : 0,\n    overall_conv_rate: totalClicks > 0 ? round2((totalConversions / totalClicks) * 100) : 0\n  },\n\n  by_campaign: computeGroupMetrics(groupBy(rows, 'campaign')),\n  by_match_type: computeGroupMetrics(groupBy(rows, 'match_type')),\n  by_device: computeGroupMetrics(groupBy(rows, 'device')),\n\n  // Pre-flagged problem rows for the LLM to reason about\n  zero_conv_high_spend: rows\n    .filter(r => r.cost > 50 && r.conversions === 0)\n    .map(r => ({\n      keyword: r.keyword,\n      campaign: r.campaign,\n      match_type: r.match_type,\n      cost: round2(r.cost),\n      clicks: r.clicks,\n      qs: r.quality_score\n    })),\n\n  low_qs_high_spend: rows\n    .filter(r => r.quality_score <= 4 && r.cost > 100)\n    .map(r => ({\n      keyword: r.keyword,\n      campaign: r.campaign,\n      match_type: r.match_type,\n      cost: round2(r.cost),\n      qs: r.quality_score\n    })),\n\n  top_performers: rows\n    .filter(r => r.conversions > 0)\n    .sort((a, b) => (a.cost / a.conversions) - (b.cost / b.conversions))\n    .slice(0, 5)\n    .map(r => ({\n      keyword: r.keyword,\n      campaign: r.campaign,\n      cost: round2(r.cost),\n      conversions: r.conversions,\n      cpa: round2(r.cost / r.conversions)\n    }))\n};\n\nreturn [{ json: metrics }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        -272
+      ],
+      "id": "1300ef96-c487-4bd3-b203-c01d9bff68d1",
+      "name": "Compute Metrics"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -224,
+        -272
+      ],
+      "id": "fe0e885b-63df-45a0-9dba-69577f1c567d",
+      "name": "Claude - Wasted Spend Auditor",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YKYClu6DKyPYvugb",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n\n// Extract the text from Claude's response structure\n// Anthropic returns: { content: [{ type: \"text\", text: \"...\" }] }\nconst rawText = response.content[0].text;\n\n// Defensive parsing — strip markdown fences if Claude added them\nconst cleaned = rawText\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\nlet findings = [];\ntry {\n  findings = JSON.parse(cleaned);\n  // Normalize — sometimes Claude returns a single object instead of array\n  if (!Array.isArray(findings)) findings = [findings];\n} catch (err) {\n  // Don't crash — return empty findings with error info for debugging\n  return [{\n    json: {\n      auditor: 'wasted_spend',\n      findings: [],\n      finding_count: 0,\n      parse_error: err.message,\n      raw_response: rawText.substring(0, 500) // first 500 chars for debugging\n    }\n  }];\n}\n\n// Also capture token usage — useful for cost tracking\nconst usage = response.usage || {};\n\nreturn [{\n  json: {\n    auditor: 'wasted_spend',\n    findings: findings,\n    finding_count: findings.length,\n    tokens_used: {\n      input: usage.input_tokens || 0,\n      output: usage.output_tokens || 0\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        -272
+      ],
+      "id": "bfa9abf1-1f29-4258-8a42-3dddc9df805e",
+      "name": "Parse - Wasted Spend"
+    },
+    {
+      "parameters": {
+        "jsCode": "const metrics = $input.first().json;\n\nconst systemPrompt = `You are a senior paid media auditor with 10+ years of experience optimizing Google Ads accounts for mid-market brands. You review pre-computed account metrics to identify wasted spend.\n\nCRITICAL RULES:\n- All numbers are pre-computed. DO NOT calculate anything yourself. Trust the data.\n- Only flag findings supported by the data. Never invent issues.\n- If you find nothing material, return an empty array [].\n\nA wasted spend finding must meet ALL these criteria:\n- Real dollars spent (over $50 in the period)\n- Demonstrably underperforming the account or its peers\n- Has a concrete, implementable fix\n\nLook specifically for:\n- Keywords in zero_conv_high_spend showing real budget drain\n- Keywords in low_qs_high_spend (paying auction tax)\n- Match types underperforming (compare by_match_type)\n- Device segments with disproportionate CPA gaps (compare by_device)\n- Campaigns with CPA significantly above account average\n\nReturn ONLY a valid JSON array. No preamble, no markdown fences, no explanation.\nEach finding must match this exact schema:\n[{\n  \"finding_id\": \"ws_001\",\n  \"severity\": \"high\",\n  \"category\": \"wasted_spend\",\n  \"title\": \"short headline under 10 words\",\n  \"description\": \"2-3 sentence explanation\",\n  \"evidence\": \"specific numbers from the data\",\n  \"estimated_monthly_savings\": 0,\n  \"estimated_effort_hours\": 0,\n  \"recommended_action\": \"specific action a media buyer would take today\",\n  \"confidence\": 0.0\n}]\n\nCalibration:\n- severity high: over $500/mo savings OR fundamental issue\n- severity medium: $100-500/mo savings  \n- severity low: under $100/mo but still worth fixing\n- confidence below 0.7 means inferred, say so in description\n\nReturn ONLY the JSON array. Nothing else.`;\n\nconst requestBody = {\n  model: \"claude-opus-4-5\",\n  max_tokens: 4096,\n  system: systemPrompt,\n  messages: [\n    {\n      role: \"user\",\n      content: \"Audit this account for wasted spend:\\n\\n\" + JSON.stringify(metrics, null, 2)\n    }\n  ]\n};\n\nreturn [{\n  json: {\n    request_body: JSON.stringify(requestBody)\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        -272
+      ],
+      "id": "fda3c8aa-23f5-47a0-a465-3e4eb07e494e",
+      "name": "Build Claude Request - Wasted Spend"
+    },
+    {
+      "parameters": {
+        "jsCode": "const metrics = $input.first().json;\n\nconst systemPrompt = `You are a senior paid media auditor reviewing Google Ads account structure metrics.\n\nCRITICAL RULES:\n- All numbers are pre-computed. DO NOT calculate anything yourself.\n- Only flag findings supported by the data. Never invent issues.\n- Return [] if nothing material found.\n\nLook specifically for:\n- Campaigns or ad groups with very low conv_rate compared to account average (structural inefficiency)\n- Match type distribution issues (over-reliance on broad match across by_match_type)\n- Any campaign with high spend but CTR significantly below account average (ad relevance issues)\n- Campaigns where impressions are high but clicks are disproportionately low (QS or ad copy issues)\n\nEach finding must include specific evidence from the data with exact numbers.\n\nReturn ONLY a valid JSON array. No preamble, no markdown fences. Schema:\n[{\n  \"finding_id\": \"st_001\",\n  \"severity\": \"high\",\n  \"category\": \"structural\",\n  \"title\": \"short headline under 10 words\",\n  \"description\": \"2-3 sentence explanation\",\n  \"evidence\": \"specific numbers from the data\",\n  \"estimated_monthly_savings\": 0,\n  \"estimated_effort_hours\": 0,\n  \"recommended_action\": \"specific action a media buyer would take today\",\n  \"confidence\": 0.0\n}]\n\nReturn ONLY the JSON array. Nothing else.`;\n\nconst requestBody = {\n  model: \"claude-opus-4-5\",\n  max_tokens: 4096,\n  system: systemPrompt,\n  messages: [\n    {\n      role: \"user\",\n      content: \"Audit this account for wasted spend:\\n\\n\" + JSON.stringify(metrics, null, 2)\n    }\n  ]\n};\n\nreturn [{\n  json: {\n    request_body: JSON.stringify(requestBody)\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        -80
+      ],
+      "id": "c547c598-739b-4424-9a0d-5dab6d0dd0b6",
+      "name": "Build Claude Request - Structural"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -224,
+        -80
+      ],
+      "id": "77f27691-a0a1-40c6-abbd-77d892190290",
+      "name": "Claude - Structural Auditor",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YKYClu6DKyPYvugb",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n\n// Extract the text from Claude's response structure\n// Anthropic returns: { content: [{ type: \"text\", text: \"...\" }] }\nconst rawText = response.content[0].text;\n\n// Defensive parsing — strip markdown fences if Claude added them\nconst cleaned = rawText\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\nlet findings = [];\ntry {\n  findings = JSON.parse(cleaned);\n  // Normalize — sometimes Claude returns a single object instead of array\n  if (!Array.isArray(findings)) findings = [findings];\n} catch (err) {\n  // Don't crash — return empty findings with error info for debugging\n  return [{\n    json: {\n      auditor: 'wasted_spend',\n      findings: [],\n      finding_count: 0,\n      parse_error: err.message,\n      raw_response: rawText.substring(0, 500) // first 500 chars for debugging\n    }\n  }];\n}\n\n// Also capture token usage — useful for cost tracking\nconst usage = response.usage || {};\n\nreturn [{\n  json: {\n    auditor: 'structural',\n    findings: findings,\n    finding_count: findings.length,\n    tokens_used: {\n      input: usage.input_tokens || 0,\n      output: usage.output_tokens || 0\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        -80
+      ],
+      "id": "2ad395f9-b751-479a-9c4a-e7e0fabb6d84",
+      "name": "Parse - Structural"
+    },
+    {
+      "parameters": {
+        "jsCode": "const metrics = $input.first().json;\n\nconst systemPrompt = `You are a senior paid media auditor reviewing Google Ads conversion tracking quality.\n\nCRITICAL RULES:\n- All numbers are pre-computed. DO NOT calculate anything yourself.\n- Only flag findings supported by the data. Never invent issues.\n- Return [] if nothing material found.\n\nLook specifically for:\n- Campaigns with high spend and zero conversions (potential tracking gaps)\n- Very low overall conv_rate that may indicate tracking under-reporting\n- ROAS values that seem implausibly high or low (potential double-counting or missed tracking)\n- Device segments where conversion data seems inconsistent with click volume\n- Gaps between total_conv_value and what blended CPA/ROAS implies\n\nImportant: Without direct access to the account's conversion settings, some findings will be inferred. \nMark confidence accordingly — below 0.7 for anything inferred.\n\nReturn ONLY a valid JSON array. No preamble, no markdown fences. Schema:\n[{\n  \"finding_id\": \"tr_001\",\n  \"severity\": \"high\",\n  \"category\": \"tracking\",\n  \"title\": \"short headline under 10 words\",\n  \"description\": \"2-3 sentence explanation\",\n  \"evidence\": \"specific numbers from the data\",\n  \"estimated_monthly_savings\": 0,\n  \"estimated_effort_hours\": 0,\n  \"recommended_action\": \"specific action a media buyer would take today\",\n  \"confidence\": 0.0\n}]\n\nReturn ONLY the JSON array. Nothing else.`;\n\nconst requestBody = {\n  model: \"claude-opus-4-5\",\n  max_tokens: 4096,\n  system: systemPrompt,\n  messages: [\n    {\n      role: \"user\",\n      content: \"Audit this account for wasted spend:\\n\\n\" + JSON.stringify(metrics, null, 2)\n    }\n  ]\n};\n\nreturn [{\n  json: {\n    request_body: JSON.stringify(requestBody)\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        128
+      ],
+      "id": "eebbde28-3372-4903-a4eb-ce3cf57b488b",
+      "name": "Build Claude Request - Tracking"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n\n// Extract the text from Claude's response structure\n// Anthropic returns: { content: [{ type: \"text\", text: \"...\" }] }\nconst rawText = response.content[0].text;\n\n// Defensive parsing — strip markdown fences if Claude added them\nconst cleaned = rawText\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\nlet findings = [];\ntry {\n  findings = JSON.parse(cleaned);\n  // Normalize — sometimes Claude returns a single object instead of array\n  if (!Array.isArray(findings)) findings = [findings];\n} catch (err) {\n  // Don't crash — return empty findings with error info for debugging\n  return [{\n    json: {\n      auditor: 'wasted_spend',\n      findings: [],\n      finding_count: 0,\n      parse_error: err.message,\n      raw_response: rawText.substring(0, 500) // first 500 chars for debugging\n    }\n  }];\n}\n\n// Also capture token usage — useful for cost tracking\nconst usage = response.usage || {};\n\nreturn [{\n  json: {\n    auditor: 'tracking',\n    findings: findings,\n    finding_count: findings.length,\n    tokens_used: {\n      input: usage.input_tokens || 0,\n      output: usage.output_tokens || 0\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        128
+      ],
+      "id": "845da3e1-c9ff-4341-b212-422817afbea5",
+      "name": "Parse - Tracking"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -224,
+        128
+      ],
+      "id": "391eb06c-76ac-423b-b969-292e7525d1fc",
+      "name": "Claude - Tracking Auditor",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YKYClu6DKyPYvugb",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const metrics = $input.first().json;\n\nconst systemPrompt = `You are a senior paid media auditor reviewing Google Ads bidding strategy and budget allocation.\n\nCRITICAL RULES:\n- All numbers are pre-computed. DO NOT calculate anything yourself.\n- Only flag findings supported by the data. Never invent issues.\n- Return [] if nothing material found.\n\nLook specifically for:\n- Campaigns with strong ROAS that likely deserve more budget (scale opportunity)\n- Campaigns with poor ROAS consuming disproportionate spend (bid strategy misalignment)\n- Device CPA gaps in by_device — if mobile CPA is significantly higher than desktop, bid adjustments needed\n- Match type CPA gaps in by_match_type — broad match paying premium over exact for same conversions\n- Top performers in top_performers that have low spend relative to their efficiency (underbidding signals)\n- Any campaign where cost is high but conv_rate is near zero (bidding into wrong auction)\n\nReturn ONLY a valid JSON array. No preamble, no markdown fences. Schema:\n[{\n  \"finding_id\": \"bd_001\",\n  \"severity\": \"high\",\n  \"category\": \"bidding\",\n  \"title\": \"short headline under 10 words\",\n  \"description\": \"2-3 sentence explanation\",\n  \"evidence\": \"specific numbers from the data\",\n  \"estimated_monthly_savings\": 0,\n  \"estimated_effort_hours\": 0,\n  \"recommended_action\": \"specific action a media buyer would take today\",\n  \"confidence\": 0.0\n}]\n\nReturn ONLY the JSON array. Nothing else.`;\n\nconst requestBody = {\n  model: \"claude-opus-4-5\",\n  max_tokens: 4096,\n  system: systemPrompt,\n  messages: [\n    {\n      role: \"user\",\n      content: \"Audit this account for wasted spend:\\n\\n\" + JSON.stringify(metrics, null, 2)\n    }\n  ]\n};\n\nreturn [{\n  json: {\n    request_body: JSON.stringify(requestBody)\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        336
+      ],
+      "id": "9ac70579-2cd0-41ed-9e8a-7ecc11481112",
+      "name": "Build Claude Request - Bidding"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -224,
+        336
+      ],
+      "id": "43c85901-4214-488c-afc0-d0c7c7cea986",
+      "name": "Claude - Bidding Auditor",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YKYClu6DKyPYvugb",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n\n// Extract the text from Claude's response structure\n// Anthropic returns: { content: [{ type: \"text\", text: \"...\" }] }\nconst rawText = response.content[0].text;\n\n// Defensive parsing — strip markdown fences if Claude added them\nconst cleaned = rawText\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\nlet findings = [];\ntry {\n  findings = JSON.parse(cleaned);\n  // Normalize — sometimes Claude returns a single object instead of array\n  if (!Array.isArray(findings)) findings = [findings];\n} catch (err) {\n  // Don't crash — return empty findings with error info for debugging\n  return [{\n    json: {\n      auditor: 'wasted_spend',\n      findings: [],\n      finding_count: 0,\n      parse_error: err.message,\n      raw_response: rawText.substring(0, 500) // first 500 chars for debugging\n    }\n  }];\n}\n\n// Also capture token usage — useful for cost tracking\nconst usage = response.usage || {};\n\nreturn [{\n  json: {\n    auditor: 'bidding',\n    findings: findings,\n    finding_count: findings.length,\n    tokens_used: {\n      input: usage.input_tokens || 0,\n      output: usage.output_tokens || 0\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        336
+      ],
+      "id": "f8bc6be2-f279-4ecb-9aba-f368c10c3e89",
+      "name": "Parse - Bidding"
+    },
+    {
+      "parameters": {
+        "jsCode": "const metrics = $input.first().json;\n\nconst systemPrompt = `You are a senior paid media auditor reviewing negative keyword hygiene in Google Ads.\n\nCRITICAL RULES:\n- All numbers are pre-computed. DO NOT calculate anything yourself.\n- Only flag findings supported by the data. Never invent issues.\n- Return [] if nothing material found.\n\nLook specifically for:\n- Keywords in zero_conv_high_spend with broad or phrase match — these indicate missing negatives allowing irrelevant queries\n- Campaigns running broad match with poor performance — classic signal of missing negative keyword lists\n- Comparison between broad vs exact match CPA in by_match_type — large gap suggests broad match triggering wasteful queries\n- Any campaign with high impressions, low CTR, and low conv_rate — often caused by irrelevant query matching\n- If Generic-Broad or similar campaigns exist with poor metrics, they likely need comprehensive negative lists\n\nNote: Without search term data, findings are partially inferred from match type performance gaps.\nMark confidence appropriately.\n\nReturn ONLY a valid JSON array. No preamble, no markdown fences. Schema:\n[{\n  \"finding_id\": \"nk_001\",\n  \"severity\": \"high\",\n  \"category\": \"negatives\",\n  \"title\": \"short headline under 10 words\",\n  \"description\": \"2-3 sentence explanation\",\n  \"evidence\": \"specific numbers from the data\",\n  \"estimated_monthly_savings\": 0,\n  \"estimated_effort_hours\": 0,\n  \"recommended_action\": \"specific action a media buyer would take today\",\n  \"confidence\": 0.0\n}]\n\nReturn ONLY the JSON array. Nothing else.`;\n\nconst requestBody = {\n  model: \"claude-opus-4-5\",\n  max_tokens: 4096,\n  system: systemPrompt,\n  messages: [\n    {\n      role: \"user\",\n      content: \"Audit this account for wasted spend:\\n\\n\" + JSON.stringify(metrics, null, 2)\n    }\n  ]\n};\n\nreturn [{\n  json: {\n    request_body: JSON.stringify(requestBody)\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        528
+      ],
+      "id": "01155305-81e7-4d65-9bed-e1770716d4d1",
+      "name": "Build Claude Request - Negatives"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -224,
+        528
+      ],
+      "id": "57e5307b-0450-4385-b19f-957b22722fa4",
+      "name": "Claude - Negatives Auditor",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YKYClu6DKyPYvugb",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n\n// Extract the text from Claude's response structure\n// Anthropic returns: { content: [{ type: \"text\", text: \"...\" }] }\nconst rawText = response.content[0].text;\n\n// Defensive parsing — strip markdown fences if Claude added them\nconst cleaned = rawText\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\nlet findings = [];\ntry {\n  findings = JSON.parse(cleaned);\n  // Normalize — sometimes Claude returns a single object instead of array\n  if (!Array.isArray(findings)) findings = [findings];\n} catch (err) {\n  // Don't crash — return empty findings with error info for debugging\n  return [{\n    json: {\n      auditor: 'wasted_spend',\n      findings: [],\n      finding_count: 0,\n      parse_error: err.message,\n      raw_response: rawText.substring(0, 500) // first 500 chars for debugging\n    }\n  }];\n}\n\n// Also capture token usage — useful for cost tracking\nconst usage = response.usage || {};\n\nreturn [{\n  json: {\n    auditor: 'negatives',\n    findings: findings,\n    finding_count: findings.length,\n    tokens_used: {\n      input: usage.input_tokens || 0,\n      output: usage.output_tokens || 0\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        528
+      ],
+      "id": "f1c71465-76bf-4c76-957d-aad1ee210617",
+      "name": "Parse - Negatives"
+    },
+    {
+      "parameters": {
+        "jsCode": "const metrics = $input.first().json;\n\nconst systemPrompt = `You are a senior paid media auditor reviewing audience targeting and device performance in Google Ads.\n\nCRITICAL RULES:\n- All numbers are pre-computed. DO NOT calculate anything yourself.\n- Only flag findings supported by the data. Never invent issues.\n- Return [] if nothing material found.\n\nLook specifically for:\n- Device performance gaps in by_device — if mobile CPA is significantly higher than desktop:\n  * Recommend negative bid adjustment for mobile\n  * Quantify the wasted spend on mobile vs what desktop efficiency would imply\n- Campaigns where one device consumes high spend but delivers poor conv_rate vs peers\n- If desktop ROAS is strong but desktop spend is low relative to mobile — budget reallocation opportunity\n- Any device segment with zero conversions and significant spend\n\nNote: Without audience list data, device segmentation is the primary signal available.\nFocus findings on device bid strategy recommendations with specific numbers.\n\nReturn ONLY a valid JSON array. No preamble, no markdown fences. Schema:\n[{\n  \"finding_id\": \"au_001\",\n  \"severity\": \"high\",\n  \"category\": \"audiences\",\n  \"title\": \"short headline under 10 words\",\n  \"description\": \"2-3 sentence explanation\",\n  \"evidence\": \"specific numbers from the data\",\n  \"estimated_monthly_savings\": 0,\n  \"estimated_effort_hours\": 0,\n  \"recommended_action\": \"specific action a media buyer would take today\",\n  \"confidence\": 0.0\n}]\n\nReturn ONLY the JSON array. Nothing else.`;\n\nconst requestBody = {\n  model: \"claude-opus-4-5\",\n  max_tokens: 4096,\n  system: systemPrompt,\n  messages: [\n    {\n      role: \"user\",\n      content: \"Audit this account for wasted spend:\\n\\n\" + JSON.stringify(metrics, null, 2)\n    }\n  ]\n};\n\nreturn [{\n  json: {\n    request_body: JSON.stringify(requestBody)\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        736
+      ],
+      "id": "3dcdea9e-7379-4a2a-aaaa-3fe79b3e4787",
+      "name": "Build Claude Request - Audiences"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -224,
+        736
+      ],
+      "id": "b7ca3ae2-06fb-473e-9373-e876b7a3f4f0",
+      "name": "Claude - Audiences Auditor",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YKYClu6DKyPYvugb",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n\n// Extract the text from Claude's response structure\n// Anthropic returns: { content: [{ type: \"text\", text: \"...\" }] }\nconst rawText = response.content[0].text;\n\n// Defensive parsing — strip markdown fences if Claude added them\nconst cleaned = rawText\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\nlet findings = [];\ntry {\n  findings = JSON.parse(cleaned);\n  // Normalize — sometimes Claude returns a single object instead of array\n  if (!Array.isArray(findings)) findings = [findings];\n} catch (err) {\n  // Don't crash — return empty findings with error info for debugging\n  return [{\n    json: {\n      auditor: 'audiences',\n      findings: [],\n      finding_count: 0,\n      parse_error: err.message,\n      raw_response: rawText.substring(0, 500) // first 500 chars for debugging\n    }\n  }];\n}\n\n// Also capture token usage — useful for cost tracking\nconst usage = response.usage || {};\n\nreturn [{\n  json: {\n    auditor: 'wasted_spend',\n    findings: findings,\n    finding_count: findings.length,\n    tokens_used: {\n      input: usage.input_tokens || 0,\n      output: usage.output_tokens || 0\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        736
+      ],
+      "id": "1f83db47-1044-4732-9994-efff49df518b",
+      "name": "Parse - Audiences"
+    },
+    {
+      "parameters": {
+        "numberInputs": 6
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        192,
+        -272
+      ],
+      "id": "183a2906-6daa-40ab-978b-48dd71e78fa0",
+      "name": "Merge All Findings"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge gives us 6 separate items, one per auditor\n// We need one flat array of ALL findings combined\nconst allItems = $input.all();\n\n// Flatten all findings arrays into one\nconst allFindings = allItems.flatMap(item => {\n  const findings = item.json.findings || [];\n  return findings;\n});\n\n// Pull account summary from the Compute Metrics node\n// $() lets us reach back to any named node in the workflow\nconst metrics = $('Compute Metrics').first().json;\n\n// Count findings by severity for the summary\nconst severityCounts = allFindings.reduce((acc, f) => {\n  acc[f.severity] = (acc[f.severity] || 0) + 1;\n  return acc;\n}, {});\n\n// Total estimated savings across all findings\nconst totalEstimatedSavings = allFindings.reduce((acc, f) => {\n  return acc + (f.estimated_monthly_savings || 0);\n}, 0);\n\nreturn [{\n  json: {\n    account_name: metrics.account_name,\n    period_summary: metrics.period_summary,\n    total_findings: allFindings.length,\n    severity_breakdown: severityCounts,\n    total_estimated_monthly_savings: totalEstimatedSavings,\n    findings: allFindings\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -272
+      ],
+      "id": "e0889cde-0460-41c8-b74b-1fd0815e851b",
+      "name": "Flatten Findings"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nconst systemPrompt = `You are a senior paid media consultant helping a marketing director prioritize fixes for their Google Ads account.\n\nYou will receive an array of audit findings across multiple categories (wasted spend, structure, tracking, bidding, negatives, audiences).\n\nYour job: select the TOP 10 most impactful findings and return them in priority order.\n\nPrioritization logic:\n1. Primary sort: (estimated_monthly_savings × confidence) — highest first\n2. Secondary: tracking issues rank higher than their savings suggest (broken tracking corrupts all decisions)\n3. Tertiary: lower effort_hours breaks ties (quick wins surface higher)\n\nFor each of the top 10, add these two fields to the existing finding object:\n- \"priority_rank\": number 1-10 (1 = most important)\n- \"priority_rationale\": one sentence explaining why this rank\n\nReturn ONLY a valid JSON array of exactly 10 findings (or fewer if less than 10 total exist).\nInclude ALL original fields plus the two new ones.\nNo preamble, no markdown fences, no explanation.\n\nReturn ONLY the JSON array.`;\n\nconst requestBody = {\n  model: \"claude-opus-4-5\",\n  max_tokens: 8192,\n  system: systemPrompt,\n  messages: [\n    {\n      role: \"user\",\n      content: \"Prioritize these findings:\\n\\nTotal findings: \" + \n        data.total_findings + \n        \"\\nTotal estimated savings: $\" + \n        data.total_estimated_monthly_savings + \n        \"/mo\\n\\nFindings:\\n\" + \n        JSON.stringify(data.findings, null, 2)\n    }\n  ]\n};\n\nreturn [{\n  json: {\n    request_body: JSON.stringify(requestBody),\n    // Pass through account data for the report writer\n    account_name: data.account_name,\n    period_summary: data.period_summary,\n    total_findings: data.total_findings,\n    severity_breakdown: data.severity_breakdown,\n    total_estimated_monthly_savings: data.total_estimated_monthly_savings\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        -272
+      ],
+      "id": "f4595007-dadf-4e7e-aa23-8c4388b9ad88",
+      "name": "Build Prioritizer Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        816,
+        -272
+      ],
+      "id": "9dced5d3-9d5b-4fc6-89e8-f2f9cc58b66e",
+      "name": "Claude - Prioritizer",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YKYClu6DKyPYvugb",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst rawText = response.content[0].text;\n\nconst cleaned = rawText\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\nlet prioritizedFindings = [];\ntry {\n  prioritizedFindings = JSON.parse(cleaned);\n  if (!Array.isArray(prioritizedFindings)) {\n    prioritizedFindings = [prioritizedFindings];\n  }\n\n  // Fix zero-indexed ranks if Claude returned 0-9 instead of 1-10\n  const minRank = Math.min(...prioritizedFindings.map(f => f.priority_rank));\n  if (minRank === 0) {\n    prioritizedFindings = prioritizedFindings.map(f => ({\n      ...f,\n      priority_rank: f.priority_rank + 1\n    }));\n  }\n\n  // Sort by rank ascending just to be safe\n  prioritizedFindings.sort((a, b) => a.priority_rank - b.priority_rank);\n\n} catch (err) {\n  return [{\n    json: {\n      prioritized_findings: [],\n      parse_error: err.message,\n      raw: rawText.substring(0, 500)\n    }\n  }];\n}\n\n// Pull the account context from the Build Prioritizer Request node\nconst context = $('Build Prioritizer Request').first().json;\n\nreturn [{\n  json: {\n    account_name: context.account_name,\n    period_summary: context.period_summary,\n    total_findings: context.total_findings,\n    severity_breakdown: context.severity_breakdown,\n    total_estimated_monthly_savings: context.total_estimated_monthly_savings,\n    prioritized_findings: prioritizedFindings,\n    top_finding_count: prioritizedFindings.length\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        -272
+      ],
+      "id": "7bcbc3cc-19dd-48da-ba1d-af72960643b5",
+      "name": "Parse Prioritizer"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\n// Only send top 3 to the report writer — keeps the prompt focused\n// and reduces token cost. Full findings are already saved.\nconst top3 = data.prioritized_findings\n  .filter(f => f.priority_rank <= 3);\n\nconst systemPrompt = `You are a senior paid media strategist writing an executive audit report for a marketing director.\n\nWrite in plain, confident language. No jargon. No hedging. No filler.\nThe reader is busy. Every sentence must earn its place.\n\nReturn ONLY a valid JSON object in this exact structure — no preamble, no markdown fences:\n\n{\n  \"executive_summary\": \"3-4 sentences. What is the headline story? What is the single biggest opportunity? What is the total estimated monthly impact if top issues are fixed?\",\n  \"performance_snapshot\": \"1-2 sentences describing current account health in plain terms using the actual metrics.\",\n  \"top_3_priorities\": [\n    {\n      \"rank\": 1,\n      \"title\": \"short title\",\n      \"action\": \"specific thing to do this week\",\n      \"impact\": \"dollar or percentage impact stated plainly\"\n    }\n  ],\n  \"quick_wins\": [\n    \"Specific action 1 that takes under 1 hour\",\n    \"Specific action 2 that takes under 1 hour\",\n    \"Specific action 3 that takes under 1 hour\"\n  ],\n  \"watch_list\": [\n    \"Concern 1 to monitor\",\n    \"Concern 2 to monitor\"\n  ],\n  \"audit_metadata\": {\n    \"total_findings\": 0,\n    \"high_severity_count\": 0,\n    \"medium_severity_count\": 0,\n    \"low_severity_count\": 0,\n    \"total_estimated_monthly_savings\": 0\n  }\n}`;\n\nconst userMessage = \n  \"Write the executive audit report for this account.\\n\\n\" +\n  \"Account: \" + data.account_name + \"\\n\\n\" +\n  \"Period Metrics:\\n\" + JSON.stringify(data.period_summary, null, 2) + \"\\n\\n\" +\n  \"Finding Summary:\\n\" +\n  \"- Total findings: \" + data.total_findings + \"\\n\" +\n  \"- Severity breakdown: \" + JSON.stringify(data.severity_breakdown) + \"\\n\" +\n  \"- Total estimated monthly savings: $\" + data.total_estimated_monthly_savings + \"\\n\\n\" +\n  \"Top 3 Priority Findings:\\n\" + JSON.stringify(top3, null, 2);\n\nconst requestBody = {\n  model: \"claude-opus-4-5\",\n  max_tokens: 4096,\n  system: systemPrompt,\n  messages: [{ role: \"user\", content: userMessage }]\n};\n\nreturn [{\n  json: {\n    request_body: JSON.stringify(requestBody),\n    // Pass context through for the final assembly\n    account_name: data.account_name,\n    period_summary: data.period_summary,\n    prioritized_findings: data.prioritized_findings,\n    total_findings: data.total_findings,\n    severity_breakdown: data.severity_breakdown,\n    total_estimated_monthly_savings: data.total_estimated_monthly_savings\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1232,
+        -272
+      ],
+      "id": "a3b9815b-3e94-4aa3-a141-81acc0775b8e",
+      "name": "Build Report Writer Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01 "
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1440,
+        -272
+      ],
+      "id": "e3deaab8-097d-45c2-8e28-7ebdf6a476a9",
+      "name": "Claude - Report Writer",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YKYClu6DKyPYvugb",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst rawText = response.content[0].text;\n\n// Clean markdown fences if present\nconst cleaned = rawText\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\nlet report = {};\ntry {\n  report = JSON.parse(cleaned);\n\n  // Fill audit_metadata from actual data if Claude left zeros\n  const context = $('Build Report Writer Request').first().json;\n  if (report.audit_metadata) {\n    report.audit_metadata.total_findings = context.total_findings;\n    report.audit_metadata.total_estimated_monthly_savings = \n      context.total_estimated_monthly_savings;\n    report.audit_metadata.high_severity_count = \n      context.severity_breakdown?.high || 0;\n    report.audit_metadata.medium_severity_count = \n      context.severity_breakdown?.medium || 0;\n    report.audit_metadata.low_severity_count = \n      context.severity_breakdown?.low || 0;\n  }\n\n} catch (err) {\n  report = {\n    executive_summary: \"Report generation failed.\",\n    parse_error: err.message,\n    raw: rawText.substring(0, 500)\n  };\n}\n\nconst context = $('Build Report Writer Request').first().json;\n\nreturn [{\n  json: {\n    account_name: context.account_name,\n    period_summary: context.period_summary,\n    report: report,\n    prioritized_findings: context.prioritized_findings,\n    total_findings: context.total_findings,\n    severity_breakdown: context.severity_breakdown,\n    total_estimated_monthly_savings: context.total_estimated_monthly_savings\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1648,
+        -272
+      ],
+      "id": "2e18e7a2-27ff-45cc-9636-f1cde1ba6d22",
+      "name": "Parse Report"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1856,
+        -272
+      ],
+      "id": "d6fb3583-1171-4c5a-b1d5-4803f8c9ada8",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Compute Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Metrics": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Request - Wasted Spend",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Claude Request - Structural",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Claude Request - Tracking",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Claude Request - Bidding",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Claude Request - Negatives",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Claude Request - Audiences",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude - Wasted Spend Auditor": {
+      "main": [
+        [
+          {
+            "node": "Parse - Wasted Spend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Request - Wasted Spend": {
+      "main": [
+        [
+          {
+            "node": "Claude - Wasted Spend Auditor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Request - Structural": {
+      "main": [
+        [
+          {
+            "node": "Claude - Structural Auditor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude - Structural Auditor": {
+      "main": [
+        [
+          {
+            "node": "Parse - Structural",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Request - Tracking": {
+      "main": [
+        [
+          {
+            "node": "Claude - Tracking Auditor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude - Tracking Auditor": {
+      "main": [
+        [
+          {
+            "node": "Parse - Tracking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Request - Bidding": {
+      "main": [
+        [
+          {
+            "node": "Claude - Bidding Auditor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude - Bidding Auditor": {
+      "main": [
+        [
+          {
+            "node": "Parse - Bidding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Request - Negatives": {
+      "main": [
+        [
+          {
+            "node": "Claude - Negatives Auditor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude - Negatives Auditor": {
+      "main": [
+        [
+          {
+            "node": "Parse - Negatives",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Request - Audiences": {
+      "main": [
+        [
+          {
+            "node": "Claude - Audiences Auditor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude - Audiences Auditor": {
+      "main": [
+        [
+          {
+            "node": "Parse - Audiences",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse - Wasted Spend": {
+      "main": [
+        [
+          {
+            "node": "Merge All Findings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse - Structural": {
+      "main": [
+        [
+          {
+            "node": "Merge All Findings",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Parse - Tracking": {
+      "main": [
+        [
+          {
+            "node": "Merge All Findings",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Parse - Bidding": {
+      "main": [
+        [
+          {
+            "node": "Merge All Findings",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Parse - Negatives": {
+      "main": [
+        [
+          {
+            "node": "Merge All Findings",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Parse - Audiences": {
+      "main": [
+        [
+          {
+            "node": "Merge All Findings",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "Merge All Findings": {
+      "main": [
+        [
+          {
+            "node": "Flatten Findings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten Findings": {
+      "main": [
+        [
+          {
+            "node": "Build Prioritizer Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prioritizer Request": {
+      "main": [
+        [
+          {
+            "node": "Claude - Prioritizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude - Prioritizer": {
+      "main": [
+        [
+          {
+            "node": "Parse Prioritizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Prioritizer": {
+      "main": [
+        [
+          {
+            "node": "Build Report Writer Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Report Writer Request": {
+      "main": [
+        [
+          {
+            "node": "Claude - Report Writer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude - Report Writer": {
+      "main": [
+        [
+          {
+            "node": "Parse Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Report": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "d61e3c28-21b6-4820-b856-74cbe56464ec",
+  "meta": {
+    "instanceId": "6a304cd39ce0635a5d268bd32e2cb270b6cc79b52c01df66f0504170bcf94d73"
+  },
+  "id": "KzJVJHvceAPDarP8",
+  "tags": []
+}
