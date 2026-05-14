@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
-import { AuthShell } from "./login";
+import { AuthShell } from "@/components/adaudit/AuthShell";
 
 export const Route = createFileRoute("/pending")({
   component: PendingPage,
