@@ -95,7 +95,7 @@ export function UploadScreen({ onRun }: Props) {
 
           <button
             disabled={!canRun}
-            onClick={() => onRun(accountName.trim())}
+            onClick={() => handleRun(accountName.trim(), file)}
             className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-brand to-brand-2 px-5 py-3.5 text-sm font-semibold text-background shadow-lg shadow-brand/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:from-surface-2 disabled:to-surface-2 disabled:text-muted-foreground disabled:shadow-none"
           >
             Run Audit
@@ -103,7 +103,7 @@ export function UploadScreen({ onRun }: Props) {
           </button>
 
           <button
-            onClick={() => onRun("Sample Account — TechCo SaaS")}
+            onClick={() => handleRun("Sample Account — TechCo SaaS", null)}
             className="mt-4 inline-flex w-full items-center justify-center gap-1.5 text-sm text-muted-foreground transition hover:text-brand"
           >
             Or try a sample account <ArrowRight className="h-3.5 w-3.5" />
