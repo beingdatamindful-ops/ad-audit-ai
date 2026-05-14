@@ -70,8 +70,9 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
   });
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border">
+    <div className="relative min-h-screen bg-background text-foreground">
+      <div className="bg-grid-soft pointer-events-none absolute inset-x-0 top-0 h-[400px]" />
+      <header className="relative border-b border-border/60 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
           <Logo />
           <button
@@ -83,7 +84,7 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl space-y-8 px-6 py-10">
+      <main className="relative mx-auto max-w-6xl space-y-8 px-6 py-10">
         {/* Top banner */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -104,10 +105,11 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
         </div>
 
         {/* Hero card */}
-        <section className="relative overflow-hidden rounded-2xl border border-brand/30 bg-gradient-to-br from-brand/90 via-brand to-brand-2 p-8 text-background shadow-2xl shadow-brand/10">
-          <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-background/10 blur-3xl" />
+        <section className="relative overflow-hidden rounded-3xl border border-brand/40 bg-gradient-to-br from-brand via-brand to-brand-2 p-8 text-background shadow-2xl shadow-brand/30 sm:p-10">
+          <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-background/15 blur-3xl" />
+          <div className="absolute -bottom-32 -left-20 h-72 w-72 rounded-full bg-background/10 blur-3xl" />
           <div className="relative">
-            <div className="flex items-center gap-2 text-sm font-medium opacity-80">
+            <div className="flex items-center gap-2 text-sm font-medium opacity-90">
               <Sparkles className="h-4 w-4" />
               Estimated Monthly Savings Identified
             </div>
@@ -122,10 +124,10 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
               ].map((s) => (
                 <div
                   key={s.label}
-                  className="rounded-xl border border-background/15 bg-background/10 p-4 backdrop-blur"
+                  className="rounded-xl border border-background/20 bg-background/15 p-4 backdrop-blur"
                 >
                   <div className="text-2xl font-semibold">{s.value}</div>
-                  <div className="mt-0.5 text-xs opacity-80">{s.label}</div>
+                  <div className="mt-0.5 text-xs opacity-90">{s.label}</div>
                 </div>
               ))}
             </div>

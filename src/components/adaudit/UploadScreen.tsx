@@ -25,19 +25,23 @@ export function UploadScreen({ onRun }: Props) {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="mx-auto max-w-6xl px-6 py-6">
+    <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
+      <div className="bg-grid-soft pointer-events-none absolute inset-x-0 top-0 h-[600px]" />
+      <header className="relative mx-auto max-w-6xl px-6 py-6">
         <Logo />
       </header>
-      <main className="mx-auto flex max-w-2xl flex-col items-center px-6 pt-12 pb-24 text-center">
-        <span className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted-foreground">
-          <span className="h-1.5 w-1.5 rounded-full bg-brand" />
+      <main className="relative mx-auto flex max-w-2xl flex-col items-center px-6 pt-12 pb-24 text-center">
+        <span className="mb-6 inline-flex items-center gap-2 rounded-full border border-brand/30 bg-brand/10 px-3 py-1 text-xs text-brand backdrop-blur">
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-75" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-brand" />
+          </span>
           AI-powered Google Ads audit
         </span>
-        <h1 className="text-balance text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
-          Audit your Google Ads account in 90 seconds
+        <h1 className="text-balance text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
+          Audit your Google Ads account in <span className="text-gradient-brand">90 seconds</span>
         </h1>
-        <p className="mt-4 max-w-lg text-balance text-base text-muted-foreground sm:text-lg">
+        <p className="mt-5 max-w-lg text-balance text-base text-muted-foreground sm:text-lg">
           AI-powered analysis that finds wasted spend, structural issues, and missed opportunities.
         </p>
 
