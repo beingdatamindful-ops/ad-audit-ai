@@ -116,9 +116,9 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
             </div>
             <div className="mt-8 grid grid-cols-3 gap-3">
               {[
-                { label: "Total Findings", value: FINDINGS.length },
-                { label: "High Severity", value: HIGH_COUNT },
-                { label: "Avg Confidence", value: `${AVG_CONFIDENCE}%` },
+                { label: "Total Findings", value: findings.length },
+                { label: "High Severity", value: highCount },
+                { label: "Avg Confidence", value: `${avgConfidence}%` },
               ].map((s) => (
                 <div
                   key={s.label}
