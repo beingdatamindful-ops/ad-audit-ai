@@ -3,20 +3,26 @@ import { Upload, FileText, ArrowRight } from "lucide-react";
 import { Logo } from "./Logo";
 
 interface Props {
-  onRun: (accountName: string) => void;
+  onRun: (accountName: string, csvData: string) => void;
 }
 
 export function UploadScreen({ onRun }: Props) {
   const [accountName, setAccountName] = useState("");
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = (f: File | undefined) => {
-    if (f) setFileName(f.name);
+    if (f) setFile(f);
   };
 
-  const canRun = accountName.trim().length > 0 && fileName;
+  const fileName = file?.name ?? null;
+  const canRun = accountName.trim().length > 0 && !!file;
+
+  const handleRun = async (name: string, f: File | null) => {
+    const csvData = f ? await f.text() : "";
+    onRun(name, csvData);
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -89,7 +95,7 @@ export function UploadScreen({ onRun }: Props) {
 
           <button
             disabled={!canRun}
-            onClick={() => onRun(accountName.trim())}
+            onClick={() => handleRun(accountName.trim(), file)}
             className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-brand to-brand-2 px-5 py-3.5 text-sm font-semibold text-background shadow-lg shadow-brand/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:from-surface-2 disabled:to-surface-2 disabled:text-muted-foreground disabled:shadow-none"
           >
             Run Audit
@@ -97,7 +103,7 @@ export function UploadScreen({ onRun }: Props) {
           </button>
 
           <button
-            onClick={() => onRun("Sample Account — TechCo SaaS")}
+            onClick={() => handleRun("Sample Account — TechCo SaaS", null)}
             className="mt-4 inline-flex w-full items-center justify-center gap-1.5 text-sm text-muted-foreground transition hover:text-brand"
           >
             Or try a sample account <ArrowRight className="h-3.5 w-3.5" />

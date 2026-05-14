@@ -8,19 +8,15 @@ import {
 } from "lucide-react";
 import { Logo } from "./Logo";
 import {
-  FINDINGS,
-  TOTAL_SAVINGS,
-  HIGH_COUNT,
-  AVG_CONFIDENCE,
-  SUMMARY,
-  TOP_PRIORITIES,
   type Severity,
   type Category,
   type Finding,
+  type ReportData,
 } from "./data";
 
 interface Props {
   accountName: string;
+  data: ReportData;
   onRestart: () => void;
 }
 
@@ -44,19 +40,27 @@ const sevStyles: Record<Severity, string> = {
 const fmt = (n: number) =>
   "$" + n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 
-export function ReportScreen({ accountName, onRestart }: Props) {
+export function ReportScreen({ accountName, data, onRestart }: Props) {
+  const {
+    findings,
+    totalSavings,
+    highCount,
+    avgConfidence,
+    summary,
+    topPriorities,
+  } = data;
   const [sev, setSev] = useState<(typeof SEVERITIES)[number]>("All");
   const [cat, setCat] = useState<(typeof CATEGORIES)[number]>("All");
   const [openId, setOpenId] = useState<string | null>(null);
 
   const filtered = useMemo(
     () =>
-      FINDINGS.filter(
+      findings.filter(
         (f) =>
           (sev === "All" || f.severity === sev) &&
           (cat === "All" || f.category === cat),
       ),
-    [sev, cat],
+    [findings, sev, cat],
   );
 
   const date = new Date().toLocaleDateString("en-US", {
@@ -72,7 +76,7 @@ export function ReportScreen({ accountName, onRestart }: Props) {
           <Logo />
           <button
             onClick={onRestart}
-            className="hidden items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground sm:inline-flex"
+            className="no-print hidden items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground sm:inline-flex"
           >
             <RotateCcw className="h-3.5 w-3.5" /> New audit
           </button>
@@ -108,13 +112,13 @@ export function ReportScreen({ accountName, onRestart }: Props) {
               Estimated Monthly Savings Identified
             </div>
             <div className="mt-3 text-6xl font-bold tracking-tight sm:text-7xl">
-              {fmt(TOTAL_SAVINGS)}
+              {fmt(totalSavings)}
             </div>
             <div className="mt-8 grid grid-cols-3 gap-3">
               {[
-                { label: "Total Findings", value: FINDINGS.length },
-                { label: "High Severity", value: HIGH_COUNT },
-                { label: "Avg Confidence", value: `${AVG_CONFIDENCE}%` },
+                { label: "Total Findings", value: findings.length },
+                { label: "High Severity", value: highCount },
+                { label: "Avg Confidence", value: `${avgConfidence}%` },
               ].map((s) => (
                 <div
                   key={s.label}
@@ -134,7 +138,7 @@ export function ReportScreen({ accountName, onRestart }: Props) {
             Executive Summary
           </h2>
           <p className="text-base leading-relaxed text-foreground/90">
-            {SUMMARY}
+            {summary}
           </p>
         </section>
 
@@ -144,7 +148,7 @@ export function ReportScreen({ accountName, onRestart }: Props) {
             Top 3 Priorities
           </h2>
           <div className="grid gap-4 md:grid-cols-3">
-            {TOP_PRIORITIES.map((p, i) => (
+            {topPriorities.map((p, i) => (
               <div
                 key={p.id}
                 className="group relative rounded-2xl border border-border bg-surface p-5 transition hover:border-brand/40"
@@ -178,7 +182,7 @@ export function ReportScreen({ accountName, onRestart }: Props) {
             </h2>
           </div>
 
-          <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <div className="no-print mb-4 grid gap-3 sm:grid-cols-2">
             <FilterGroup
               label="Severity"
               options={SEVERITIES}
@@ -218,8 +222,11 @@ export function ReportScreen({ accountName, onRestart }: Props) {
         </section>
 
         {/* Bottom actions */}
-        <div className="flex flex-wrap items-center justify-center gap-3 pt-4">
-          <button className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-brand to-brand-2 px-5 py-3 text-sm font-semibold text-background shadow-lg shadow-brand/20 transition hover:brightness-110">
+        <div className="no-print flex flex-wrap items-center justify-center gap-3 pt-4">
+          <button
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-brand to-brand-2 px-5 py-3 text-sm font-semibold text-background shadow-lg shadow-brand/20 transition hover:brightness-110"
+          >
             <Download className="h-4 w-4" />
             Download PDF Report
           </button>
@@ -322,13 +329,15 @@ function FindingRow({
           />
         </div>
       </button>
-      {open && (
-        <div className="space-y-4 border-t border-border bg-background/40 px-5 py-5 text-sm">
-          <Detail label="Description" value={finding.description} />
-          <Detail label="Evidence" value={finding.evidence} />
-          <Detail label="Recommended Action" value={finding.action} accent />
-        </div>
-      )}
+      <div
+        className={`finding-details space-y-4 border-t border-border bg-background/40 px-5 py-5 text-sm ${
+          open ? "block" : "hidden"
+        }`}
+      >
+        <Detail label="Description" value={finding.description} />
+        <Detail label="Evidence" value={finding.evidence} />
+        <Detail label="Recommended Action" value={finding.action} accent />
+      </div>
     </div>
   );
 }
