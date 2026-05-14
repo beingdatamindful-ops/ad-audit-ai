@@ -148,7 +148,7 @@ export function ReportScreen({ accountName, data, onRestart }: Props) {
             Top 3 Priorities
           </h2>
           <div className="grid gap-4 md:grid-cols-3">
-            {TOP_PRIORITIES.map((p, i) => (
+            {topPriorities.map((p, i) => (
               <div
                 key={p.id}
                 className="group relative rounded-2xl border border-border bg-surface p-5 transition hover:border-brand/40"
